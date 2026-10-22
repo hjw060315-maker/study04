@@ -1,5 +1,7 @@
 # PRD 1단계: 냉장고 사진 입력과 식재료 인식
 
+> **구현 방식 변경 (Streamlit)**: 이 앱은 Streamlit으로 개발해 Streamlit Community Cloud에 무료 배포한다. 따라서 아래 8절의 `POST /api/ingredients`와 7절의 HTML 화면은 쓰지 않고, 같은 기능을 Streamlit 위젯(`st.file_uploader`, `st.camera_input`, `st.data_editor`)으로 구현했다. 이미지 축소는 브라우저가 아니라 서버(Pillow)에서 하고, 오류 코드(`invalid_image`, `too_large`, `model_unavailable`, `parse_failed`)는 `AppError`로 유지한다. API 키는 `st.secrets`(Secrets)에서 읽는다. 추가로 무료 모델 한도 보호를 위해 세션당 10회/시간, 서버 전체 60회/시간의 호출 제한을 둔다. 또한 1순위 모델이 막히면 한 번 더 시도한 뒤 폴백 모델로 자동 전환한다.
+
 ## 1. 배경과 목표
 
 냉장고 안에 어떤 재료가 있는지 사용자가 직접 입력하는 것은 번거롭다. 1단계는 **냉장고 사진 한 장을 올리면 식재료 목록을 자동으로 만들어 주는 것**이 목표이다. 이 결과는 2단계(레시피 생성)의 입력이 된다.

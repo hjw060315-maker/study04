@@ -1,0 +1,6 @@
+[server]
+# 업로드 상한(MB). PRD 1단계의 10MB 제한과 같다 (기본값은 200MB)
+maxUploadSize = 10
+
+[browser]
+gatherUsageStats = false

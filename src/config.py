@@ -17,9 +17,22 @@ def _load_env_file(path: Path) -> None:
         os.environ.setdefault(name.strip(), value.strip().strip('"').strip("'"))
 
 
+def _streamlit_secret(name: str) -> str:
+    """Streamlit Community Cloud의 Secrets(st.secrets)에서 읽는다. 없거나 Streamlit이 없으면 빈 문자열."""
+    try:
+        import streamlit as st
+
+        return str(st.secrets.get(name, ""))
+    except Exception:  # secrets.toml 없음, streamlit 미설치 등
+        return ""
+
+
 def get_api_key() -> str:
-    _load_env_file(Path(__file__).resolve().parent.parent / ".env")
-    key = os.environ.get("OPENROUTER_API_KEY", "")
+    # 우선순위: 환경 변수 > st.secrets > 로컬 .env
+    key = os.environ.get("OPENROUTER_API_KEY", "") or _streamlit_secret("OPENROUTER_API_KEY")
+    if not key:
+        _load_env_file(Path(__file__).resolve().parent.parent / ".env")
+        key = os.environ.get("OPENROUTER_API_KEY", "")
     if not key or key == "여기에_키_입력":
         raise RuntimeError(
             "OPENROUTER_API_KEY 가 설정되지 않았습니다. .env 파일을 확인하세요."
