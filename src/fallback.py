@@ -22,7 +22,8 @@ def run_with_fallback(
     403 등 재시도해도 소용없는 오류는 그 모델만 건너뛰고, 401(키 문제)은 즉시 중단한다. 모두 실패하면 AppError.
     """
     say = on_progress or (lambda _msg: None)
-    last_error: Exception | None = None
+    failures: list[str] = []  # 모두 실패했을 때 화면에 보일 시도 내역
+    had_model_error = False
     for index, model in enumerate(models):
         attempts = 2 if index == 0 else 1
         for attempt in range(1, attempts + 1):
@@ -30,21 +31,27 @@ def run_with_fallback(
             try:
                 return call(model), model
             except ModelError as e:
-                last_error = e
+                had_model_error = True
                 if e.status == 401:  # 키 문제는 모델을 바꿔도 소용없다
                     raise AppError("server_config", "서비스 설정 문제로 처리할 수 없어요. 관리자에게 알려 주세요.", 500)
                 say(f"  → 실패 ({e})")
+                failures.append(f"{model}: {e}")
                 if not e.retryable:  # 402/403 등: 이 모델은 건너뛴다
                     break
-            except ValueError as e:  # json.JSONDecodeError 포함
-                last_error = e
+            except ValueError:  # json.JSONDecodeError 포함
                 say("  → 응답 형식이 올바르지 않음")
+                failures.append(f"{model}: 응답 형식 오류")
             if attempt < attempts:
                 say(f"  {RETRY_WAIT:g}초 뒤 같은 모델로 다시 시도")
                 time.sleep(RETRY_WAIT)
 
-    if isinstance(last_error, ModelError):
+    # 같은 모델을 두 번 시도해 같은 이유로 실패했으면 한 줄로 합친다
+    details = list(dict.fromkeys(failures))
+    if had_model_error:  # 응답 자체를 못 받은 모델이 하나라도 있으면 '형식 오류'로만 보이지 않게 한다
         raise AppError(
-            "model_unavailable", "무료 모델이 지금 혼잡하거나 응답하지 않아요. 잠시 후 다시 시도해 주세요.", 503
+            "model_unavailable",
+            f"무료 모델 {len(models)}개를 모두 시도했지만 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.",
+            503,
+            details,
         )
-    raise AppError("parse_failed", parse_failed_message, 502)
+    raise AppError("parse_failed", parse_failed_message, 502, details)

@@ -47,6 +47,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `st.session_state`에 `items`, `keys`, `values`, `get` 같은 딕셔너리 메서드 이름을 키로 쓰면 `st.session_state.items`가 저장값이 아니라 메서드로 읽힌다. 키 이름을 피하고 `st.session_state["키"]`로 접근한다(1단계 구현 중 실제로 겪음).
 - 화면 코드는 AppTest(`tests/test_streamlit_app.py`)로 확인한다. 2단계는 `recipes.generate_recipes`를 mock으로 바꿔 버튼 흐름·오류·호출 제한·이스케이프까지 검증하지만, 파일 업로드는 AppTest가 지원하지 않아 앱을 띄워 직접 확인해야 한다(브라우저에서 JS로 `input[type=file]`에 `DataTransfer`로 파일을 넣고 `change` 이벤트를 보내면 가능).
+- 실패 메시지(`st.error`)와 시도 내역은 `st.status` 블록 **바깥**에서 그린다(`show_failure`). 안쪽에서 그리면 접힌 상자 속에 들어가 "실패했어요"라는 제목만 보이고 이유가 안 보인다. AppTest는 접힌 안쪽 요소도 찾아서 이 문제를 놓치므로, `test_error_is_outside_the_collapsed_status_box`가 구조를 직접 검사한다. 모든 모델이 실패하면 `AppError.details`에 모델별 실패 이유가 담기고 화면에 "시도 내역"으로 보인다.
 - 성공 시 `st.rerun()`을 부르면 같은 실행에서 그린 `st.error`가 사라진다. 그래서 2단계의 `run_generation`은 성공했을 때만 `st.rerun()`하고, 실패하면 그대로 두어 오류 메시지가 보이게 한다. 실패한 요청의 이전 결과(`detected`, `recipes`)는 시작 시 지워서 이번 결과처럼 보이지 않게 한다.
 - 추론(reasoning) 모델은 생각하는 데 토큰을 먼저 써서, `max_tokens`를 작게 잡으면 `content`가 빈 채로 `finish_reason=length`로 끊긴다. 레시피 생성은 `MAX_TOKENS=6000`이며 그래도 모델에 따라 수십 초가 걸린다.
 

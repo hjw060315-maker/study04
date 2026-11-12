@@ -163,6 +163,42 @@ class FreeOnlyGuardTest(unittest.TestCase):
         self.assertTrue(all(m.endswith(":free") for m in models), models)
 
 
+class FailureDetailsTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(fallback.time, "sleep")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_failure_lists_which_model_failed_and_why(self):
+        errors = {"a:free": ModelError("HTTP 429", True, 429), "b:free": ModelError("HTTP 403", False, 403)}
+
+        def call(model):
+            if model == "c:free":
+                raise ValueError("깨진 JSON")
+            raise errors[model]
+
+        with mock.patch.object(fallback.time, "sleep"):
+            with self.assertRaises(AppError) as cm:
+                fallback.run_with_fallback(["a:free", "b:free", "c:free"], call)
+        # a는 2번 시도했지만 같은 이유라 한 줄로 합쳐진다
+        self.assertEqual(cm.exception.details, ["a:free: HTTP 429", "b:free: HTTP 403", "c:free: 응답 형식 오류"])
+        # 429·403·형식 오류가 섞여 있을 때 마지막 오류(형식 오류)만으로 설명하지 않고 '모두 시도했지만 실패'로 보고한다
+        self.assertEqual(cm.exception.code, "model_unavailable")
+        self.assertIn("3개를 모두 시도", cm.exception.message)
+
+    def test_only_format_errors_reports_parse_failed(self):
+        with mock.patch.object(fallback.time, "sleep"):
+            with self.assertRaises(AppError) as cm:
+                fallback.run_with_fallback(["a:free", "b:free"], mock.Mock(side_effect=ValueError("깨짐")))
+        self.assertEqual(cm.exception.code, "parse_failed")
+        self.assertEqual(cm.exception.details, ["a:free: 응답 형식 오류", "b:free: 응답 형식 오류"])
+
+    def test_no_details_when_api_key_is_bad(self):
+        with self.assertRaises(AppError) as cm:
+            fallback.run_with_fallback(["a:free"], mock.Mock(side_effect=ModelError("HTTP 401", False, 401)))
+        self.assertEqual((cm.exception.code, cm.exception.details), ("server_config", []))
+
+
 class FallbackTest(unittest.TestCase):
     def test_unknown_error_type_is_not_swallowed(self):
         with mock.patch.object(fallback.time, "sleep"):

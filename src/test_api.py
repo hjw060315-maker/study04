@@ -38,19 +38,23 @@ def make_test_image() -> bytes:
 def run_step(title: str, primary: str, call):
     """call(on_progress) 하나를 실행하고 (결과, 문제 목록)을 돌려준다."""
     print(f"\n== {title}")
-    log: list[str] = []
+    problems: list[str] = []
+    current = ""  # 지금 시도 중인 모델 (실패 줄에 모델 이름을 붙이려고 기억해 둔다)
 
     def progress(message: str) -> None:
-        log.append(message)
+        nonlocal current
         print("  " + message)
+        if "시도: " in message or message.startswith("폴백 모델로 전환: "):
+            current = message.split(": ", 1)[1]
+        elif "실패" in message or "형식이 올바르지" in message:
+            problems.append(f"{title}: {current} {message.strip().lstrip('→ ').strip()}")
 
     started = time.time()
     try:
         result = call(progress)
     except AppError as e:
         print(f"  ✗ 실패: [{e.code}] {e.message} ({time.time() - started:.1f}초)")
-        return None, [f"{title} 실패: {e.message}"]
-    problems = [m.strip() for m in log if "실패" in m or "형식이 올바르지" in m]
+        return None, problems + [f"{title} 최종 실패: {e.message}"]
     if result.model != primary:
         problems.append(f"{title}: 1순위 {primary} 대신 폴백 {result.model}이(가) 응답")
     print(f"  ✓ 성공: {result.model} ({time.time() - started:.1f}초)")

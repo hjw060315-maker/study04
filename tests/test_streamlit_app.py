@@ -108,6 +108,29 @@ class Step2Test(unittest.TestCase):
         self.assertEqual(len(at.subheader), 0)  # 이전 결과가 이번 결과처럼 남지 않는다
         self.assertNotIn("recipes", at.session_state)
 
+    def test_error_is_outside_the_collapsed_status_box(self):
+        # 접힌 st.status 안쪽에 그려진 오류는 실제 화면에서 보이지 않는다 (실제 실행에서 발견한 문제)
+        err = AppError("model_unavailable", "응답을 받지 못했어요.", 503, ["a:free: HTTP 429"])
+        with mock.patch.object(recipes, "generate_recipes", side_effect=err):
+            at = self.run_step2()
+            at.button[1].click().run()
+        self.assertEqual(len(at.status), 1)
+        self.assertEqual(at.status[0].state, "error")
+        inside = [type(c).__name__ for c in at.status[0].children.values()]
+        self.assertNotIn("Error", inside)  # 오류 메시지는 상자 바깥에 있어야 한다
+        self.assertEqual(len(at.error), 1)
+
+    def test_failure_shows_which_models_failed(self):
+        err = AppError("model_unavailable", "무료 모델 4개를 모두 시도했지만 응답을 받지 못했어요.", 503,
+                       ["baidu/x:free: HTTP 429", "nvidia/y:free: HTTP 404"])
+        with mock.patch.object(recipes, "generate_recipes", side_effect=err):
+            at = self.run_step2()
+            at.button[1].click().run()
+        self.assertEqual(len(at.error), 1)
+        self.assertIn("시도 내역", captions(at))
+        self.assertIn("baidu/x", captions(at))
+        self.assertIn("nvidia/y", captions(at))
+
     def test_unexpected_error_hides_details(self):
         with mock.patch.object(recipes, "generate_recipes", side_effect=RuntimeError("비밀 내부 정보")):
             at = self.run_step2()

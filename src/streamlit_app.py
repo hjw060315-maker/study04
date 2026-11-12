@@ -40,6 +40,19 @@ def acquire_quota() -> bool:
     return True
 
 
+def show_failure(error: Exception) -> None:
+    """실패를 숨기지 않고 화면에 표시한다. AppError면 어떤 모델이 왜 실패했는지 시도 내역도 보인다.
+
+    st.status 블록 바깥에서 불러야 한다. 안쪽에서 그리면 접힌 상자 속에 들어가 이유가 보이지 않는다.
+    """
+    if isinstance(error, AppError):
+        st.error(error.message)
+        if error.details:
+            st.caption("시도 내역: " + " / ".join(esc(d) for d in error.details))
+    else:  # 내부 오류 내용은 화면에 보이지 않는다
+        st.error("예상치 못한 오류가 발생했어요. 다시 시도해 주세요.")
+
+
 def esc(text: str) -> str:
     """모델이 만든 글이 마크다운(링크, 이미지, 수식 등)으로 해석되지 않게 특수문자를 이스케이프한다."""
     return re.sub(r"([\\`*_{}\[\]()#+\-.!|>~$:<])", r"\\\1", str(text))
@@ -62,18 +75,18 @@ def run_recognition(data: bytes) -> None:
     if not acquire_quota():
         return
     st.session_state.pop("detected", None)  # 실패했는데 이전 결과가 이번 사진의 결과처럼 보이지 않게
+    error = None
     with st.status("재료를 찾고 있어요… (최대 1~2분 걸릴 수 있어요)", expanded=True) as status:
         try:
             result = identify(data, st.write)
-        except AppError as e:
-            status.update(label="인식에 실패했어요", state="error")
-            st.error(e.message)
-            return
-        except Exception:  # 내부 오류 내용은 화면에 보이지 않는다
-            status.update(label="인식에 실패했어요", state="error")
-            st.error("예상치 못한 오류가 발생했어요. 다시 시도해 주세요.")
-            return
-        status.update(label="인식 완료", state="complete", expanded=False)
+        except Exception as e:
+            error = e
+            status.update(label="인식에 실패했어요 (시도 기록 보기)", state="error", expanded=False)
+        else:
+            status.update(label="인식 완료", state="complete", expanded=False)
+    if error is not None:
+        show_failure(error)
+        return
     st.session_state["detected"] = result.items
     st.session_state["detected_model"] = result.model
     st.session_state.editor_version = st.session_state.get("editor_version", 0) + 1
@@ -147,18 +160,18 @@ def run_generation(ingredients: list[dict], options: dict) -> bool:
     if not acquire_quota():
         return False
     st.session_state.pop("recipes", None)  # 실패했는데 이전 레시피가 이번 결과처럼 보이지 않게
+    error = None
     with st.status("레시피를 만들고 있어요… (최대 1~2분 걸릴 수 있어요)", expanded=True) as status:
         try:
             result = generate_recipes(ingredients, on_progress=st.write, **options)
-        except AppError as e:
-            status.update(label="레시피 생성에 실패했어요", state="error")
-            st.error(e.message)
-            return False
-        except Exception:
-            status.update(label="레시피 생성에 실패했어요", state="error")
-            st.error("예상치 못한 오류가 발생했어요. 다시 시도해 주세요.")
-            return False
-        status.update(label="레시피 생성 완료", state="complete", expanded=False)
+        except Exception as e:
+            error = e
+            status.update(label="레시피 생성에 실패했어요 (시도 기록 보기)", state="error", expanded=False)
+        else:
+            status.update(label="레시피 생성 완료", state="complete", expanded=False)
+    if error is not None:
+        show_failure(error)
+        return False
     st.session_state["recipes"] = result.recipes
     st.session_state["recipes_model"] = result.model
     return True
