@@ -16,7 +16,9 @@ class ModelError(Exception):
 
 
 def chat(model: str, content, max_tokens: int = 1500, timeout: int = 120) -> str:
-    """단일 user 메시지를 보내고 응답의 content 문자열만 반환한다 (reasoning은 버림)."""
+    """단일 user 메시지를 보내고 응답의 content 문자열만 반환한다 (reasoning은 버림). 무료(:free) 모델만 허용한다."""
+    if not model.endswith(":free"):  # 실수로 유료 모델이 불려 비용이 나가는 일을 막는다
+        raise ModelError(f"무료(:free) 모델만 사용할 수 있습니다: {model}", retryable=False)
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": content}],

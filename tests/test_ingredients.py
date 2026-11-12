@@ -6,6 +6,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+import fallback  # noqa: E402
 import ingredients  # noqa: E402
 from PIL import Image  # noqa: E402
 from ingredients import (  # noqa: E402
@@ -109,7 +110,7 @@ def models_called(chat_mock) -> list[str]:
 
 class RecognizeTest(unittest.TestCase):
     def setUp(self):  # 재시도 대기 시간 때문에 테스트가 느려지지 않게
-        patcher = mock.patch.object(ingredients.time, "sleep")
+        patcher = mock.patch.object(fallback.time, "sleep")
         self.sleep = patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -125,7 +126,7 @@ class RecognizeTest(unittest.TestCase):
             result = recognize(PNG)
         self.assertEqual(result.model, PRIMARY)
         self.assertEqual(models_called(m), [PRIMARY, PRIMARY])
-        self.sleep.assert_called_once_with(ingredients.RETRY_WAIT)
+        self.sleep.assert_called_once_with(fallback.RETRY_WAIT)
 
     def test_falls_back_after_primary_fails_twice(self):
         err = ModelError("HTTP 429", True, 429)

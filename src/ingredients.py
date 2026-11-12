@@ -3,21 +3,23 @@ import base64
 import io
 import json
 import re
-import time
 from typing import Callable, NamedTuple
 
 from PIL import Image, ImageOps
 
-from openrouter import ModelError, chat
+from errors import AppError
+from fallback import run_with_fallback
+from openrouter import chat
 
 VISION_MODEL = "nvidia/nemotron-3.5-super-vl:free"
-# 1순위가 막히면 순서대로 넘어간다. 모두 OpenRouter 무료 비전 모델이며, minimax는 직접 시험해 성공을 확인했다.
+# 1순위가 막히면 순서대로 넘어간다. 모두 OpenRouter 무료 비전 모델이며 2026-11-12에 직접 호출해 성공을 확인했다.
+# (구글 gemma 두 모델은 한도 때문에 429가 잦아 뒤로 둔다. minimax는 무료 목록에서 사라져 뺐다.)
 FALLBACK_MODELS = [
-    "minimax/minimax-m3.1-flash:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "dots-studio/dots-3-note-preview:free",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
 ]
-RETRY_WAIT = 2.0  # 같은 모델로 다시 시도하기 전 대기(초). 일시적 혼잡(429)이 풀리길 기다린다.
 MODEL_TIMEOUT = 60  # 모델 한 번의 호출 제한 시간(초)
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_SIDE = 1280
@@ -30,14 +32,6 @@ PROMPT = (
     "용기, 선반, 서랍 같은 재료가 아닌 것은 넣지 마세요. 확실하지 않으면 넣지 마세요. "
     "재료가 하나도 보이지 않으면 빈 배열을 반환하세요. JSON 외의 설명은 쓰지 마세요."
 )
-
-
-class AppError(Exception):
-    """사용자에게 보여 줄 오류. code는 PRD 8절의 오류 코드."""
-
-    def __init__(self, code: str, message: str, status: int = 400):
-        super().__init__(message)
-        self.code, self.message, self.status = code, message, status
 
 
 def detect_mime(data: bytes) -> str | None:
@@ -131,33 +125,10 @@ def recognize(image: bytes, on_progress: Callable[[str], None] | None = None) ->
         {"type": "text", "text": PROMPT},
         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
     ]
-    say = on_progress or (lambda _msg: None)
-
-    last_error: Exception | None = None
-    for index, model in enumerate([VISION_MODEL, *FALLBACK_MODELS]):
-        attempts = 2 if index == 0 else 1
-        for attempt in range(1, attempts + 1):
-            say(f"{attempt}차 시도: {model}" if index == 0 else f"폴백 모델로 전환: {model}")
-            try:
-                return Recognition(parse_ingredients(chat(model, content, timeout=MODEL_TIMEOUT)), model)
-            except ModelError as e:
-                last_error = e
-                if e.status == 401:  # 키 문제는 모델을 바꿔도 소용없다
-                    raise AppError("server_config", "서비스 설정 문제로 인식할 수 없어요. 관리자에게 알려 주세요.", 500)
-                say(f"  → 실패 ({e})")
-                if not e.retryable:  # 402/403 등: 이 모델은 건너뛴다
-                    break
-            except ValueError as e:  # json.JSONDecodeError 포함
-                last_error = e
-                say("  → 응답 형식이 올바르지 않음")
-            if attempt < attempts:
-                say(f"  {RETRY_WAIT:g}초 뒤 같은 모델로 다시 시도")
-                time.sleep(RETRY_WAIT)
-
-    if isinstance(last_error, ModelError):
-        raise AppError(
-            "model_unavailable",
-            "무료 모델이 지금 혼잡하거나 응답하지 않아요. 잠시 후 다시 시도해 주세요.",
-            503,
-        )
-    raise AppError("parse_failed", "인식 결과를 해석하지 못했습니다. 다시 시도해 주세요.", 502)
+    items, model = run_with_fallback(
+        [VISION_MODEL, *FALLBACK_MODELS],
+        lambda model: parse_ingredients(chat(model, content, timeout=MODEL_TIMEOUT)),
+        on_progress,
+        parse_failed_message="인식 결과를 해석하지 못했습니다. 다시 시도해 주세요.",
+    )
+    return Recognition(items, model)

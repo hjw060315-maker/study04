@@ -28,4 +28,6 @@ class SlidingWindowLimiter:
         with self._lock:
             if len(self._hits) < self.limit:
                 return 0
+            if not self._hits:  # limit=0: 기록이 없어도 항상 막히므로 창 전체를 기다리게 안내
+                return max(1, int(self.window))
             return max(1, int(self._hits[0] + self.window - now) + 1)

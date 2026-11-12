@@ -1,5 +1,7 @@
 # PRD 2단계: 식재료 기반 레시피 생성
 
+> **구현 방식 (Streamlit)**: 이 앱은 Streamlit으로 개발해 Streamlit Community Cloud에 무료 배포한다. 아래 8절의 `POST /api/recipes`와 7절의 HTML 화면은 쓰지 않고, 같은 기능을 `src/recipes.py`(생성·검증)와 Streamlit 화면(`src/streamlit_app.py`의 2단계)으로 구현했다. 모델은 모두 `:free`이며 응답이 빠른 순서(`baidu/ernie-5.5-flash-preview:free` → `nvidia/nemotron-3-ultra-550b-a55b:free` → `nvidia/nemotron-3.5-lightning:free` → `cohere/north-mini-code:free`)로 재시도·폴백한다. `nemotron-3.5-lightning`은 추론 모델이라 레시피 3개에 약 50초가 걸려 뒤로 두었다. 보유/부족 재료(`have`)는 모델 답을 믿지 않고 사용자 재료와 직접 비교해 다시 계산하며, 제외 재료가 든 레시피는 버린다.
+
 ## 1. 배경과 목표
 
 1단계에서 확인한 식재료 목록으로 **지금 바로 만들 수 있는 레시피를 추천**한다. 사용자가 "오늘 뭐 먹지?"를 고민하는 시간을 줄이는 것이 목표이다.
