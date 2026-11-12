@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 .venv/Scripts/python -m unittest discover -s tests              # 전체 단위 테스트 (모델 호출은 mock, 네트워크 불필요)
 .venv/Scripts/python -m unittest tests.test_ingredients.ParseTest   # 테스트 클래스 하나만
 .venv/Scripts/python src/config.py                              # 키 로드 확인 (마스킹된 키만 출력)
-.venv/Scripts/python src/test_api.py                            # 실제 모델 호출 스모크 테스트 (네트워크·키 필요)
+.venv/Scripts/python src/test_api.py                            # 실제 모델 호출 점검: 앱 로직으로 인식·레시피 생성을 한 번씩 실행하고 문제를 보고 (네트워크·키 필요, 실패 시 종료 코드 1)
 ```
 
 - Windows에서 한글 출력이 깨지면 `PYTHONIOENCODING=utf-8`을 앞에 붙인다.
@@ -41,7 +41,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 호출 제한: 세션당 10회/시간(`st.session_state`), 서버 전체 60회/시간(`@st.cache_resource` 공유 객체). 무료 모델 한도를 방문자 한 명이 다 쓰지 못하게 하려는 것이므로 2단계 호출에도 같은 제한을 건다.
 - API 키는 `config.get_api_key()`가 환경 변수 → `st.secrets` → 루트 `.env` 순으로 찾는다. 배포 시에는 Community Cloud의 Secrets에 `.streamlit/secrets.toml.example` 형식으로 넣는다. 키를 출력·로그에 남길 때는 `mask()`를 거친다.
 - `.streamlit/config.toml`의 `maxUploadSize = 10`이 업로드 10MB 제한이다(기본값은 200MB).
-- `test_api.py`: 화면 없이 텍스트·이미지 모델을 한 번씩 호출하는 스모크 테스트. 재시도가 없어서 제공자의 일시 오류(예: 502)로 실패할 수 있다(앱 본체는 1회 재시도함).
+- `test_api.py`: 앱과 같은 코드(`ingredients.recognize`, `recipes.generate_recipes`)를 화면 없이 실제 모델로 한 번씩 호출한다. 1순위 모델이 막혀 폴백이 쓰인 것도 '문제'로 보고한다.
 
 ## 주의할 점
 
@@ -56,3 +56,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 텍스트(2단계) `TEXT_MODEL`은 `baidu/ernie-5.5-flash-preview:free`(약 7~12초), 폴백은 `nvidia/nemotron-3-ultra-550b-a55b:free`(약 11초) → `nvidia/nemotron-3.5-lightning:free`(약 50초) → `cohere/north-mini-code:free`(약 19초). 처음 지정했던 lightning은 추론 모델이라 느려서 뒤로 뒀다(2026-11-12 직접 호출해 비교).
 - 이전에 쓰던 모델 중 `nvidia/nemotron-3-super-120b-a12b:free`는 Nvidia 백엔드 404, `google/gemma-4-26b-a4b-it:free`·`google/gemma-4-31b-it:free`는 Google 무료 공유 한도(429)가 잦아 뒤로 뒀고, `minimax/minimax-m3.1-flash:free`는 무료 목록에서 사라졌으며, `thinkingmachines/inkling-2-small:free`는 403이었다. 무료 목록은 수시로 바뀌므로 모델을 고를 때마다 `GET /api/v1/models`로 다시 확인하고 직접 호출해 본다.
 - `:free` 모델은 제공자 사정으로 404/429/502가 잦다. 오류가 나면 인증(401)이 아닌지 먼저 구분하고, 모델 목록(`GET /api/v1/models`)에서 `input_modalities`에 `image`가 있는 모델을 골라 교체한다.
+
+## 실행 시 확인 사항
+
+- 이 앱은 mock이 아니라 OpenRouter의 실제 AI 모델이 냉장고 사진을 인식하고 레시피를 생성한다.
+- 앱을 실행하거나 인식·레시피 기능을 고칠 때마다 실제로 실행해서 API가 정확하게 작동했는지, AI 모델이 문제없이 실행되었는지 확인한다(`src/test_api.py` 또는 앱 화면). 단위 테스트 통과만으로 "정상"이라고 보고하지 않는다.
+- 문제가 있었다면 어떤 문제였는지 숨기지 말고 보고한다: 1순위 모델 실패와 폴백 사용, 429·404 같은 오류, 응답 형식 오류, 인식 정확도 저하 등. 확인하지 못한 부분은 확인하지 못했다고 적는다.
+- 앱 화면도 같은 원칙이다. 인식이나 레시피 생성이 실패하면 이전에 성공한 결과를 남겨 두지 않고, 실패했다고 정직하게 화면에 표시한다.
